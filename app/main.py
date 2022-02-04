@@ -1,65 +1,49 @@
-from typing import Optional, List, Dict
+from typing import Generator
 
-from fastapi import (FastAPI, Query, Path, Body, Cookie,
-                     Header, Form, status, File, UploadFile)
-from .models import Task
+from fastapi import (FastAPI, HTTPException, Depends)
+from sqlalchemy.orm import Session
+
+from . import crud, models, schemas
+from .database import SessionLocal, engine
+
+models.Base.metadata.create_all(bind=engine)
 
 app = FastAPI()
 
-tasks: Dict[int, Task] = {
-    1: Task(pk=1, name='Test')
-}
+
+def get_db() -> Generator:
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
 
 
-@app.post('/files/')
-async def create_file(file: bytes = File(...)):
-    return {'file_size': len(file)}
+@app.post('/users/', response_model=schemas.User, tags=['users'])
+def create_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
+    db_user = crud.get_user_by_email(db, email=user.email)
+    if db_user:
+        raise HTTPException(status_code=400, detail='Email already in use.')
+    return crud.create_user(db=db, user=user)
 
 
-@app.post('/uploadfile/')
-async def create_upload_file(files: List[UploadFile] = File(...)):
-    return {'file_name': 'filw'}
+@app.get('/users/', response_model=list[schemas.User], tags=['users'])
+def list_users(offset: int = 0, limit: int = 100, db: Session = Depends(get_db)):
+    return crud.get_users(db=db, offset=offset, limit=limit)
 
 
-@app.post('/login/')
-async def login(username: str = Form(...), password: str = Form(...)):
-    return {'username': username}
+@app.get('/users/{user_id}/', response_model=schemas.User, tags=['users'])
+def get_user(user_id: int, db: Session = Depends(get_db)):
+    return crud.get_user(db=db, user_id=user_id)
 
 
-@app.get("/tasks/", response_model=List[Task])
-async def task_list(
-        filter_str: str = Query(None, min_length=3, title='Filter', alias='filter'),
-        some_id: Optional[str] = Cookie(None),
-        user_agent: str = Header(None)
+@app.post('/users/{user_id}/tasks/', response_model=schemas.Task, tags=['users'])
+def create_task(
+        user_id: int, task: schemas.TaskCreate, db: Session = Depends(get_db)
 ):
-    if filter_str:
-        return filter(lambda x: filter_str in x.name, tasks.values())
-    return list(tasks.values())
+    return crud.create_task(db=db, task=task, user_id=user_id)
 
 
-@app.post(
-    '/tasks',
-    status_code=status.HTTP_201_CREATED,
-    response_model=List[Task]
-)
-async def create_tasks(
-        new_tasks: List[Task] = Body(..., alias='tasks')
-):
-    for task in new_tasks:
-        tasks[task.pk] = task
-    return new_tasks
-
-
-@app.get("/tasks/{task_id}/")
-async def task_item(
-        task_id: int = Path(..., title='Task index', gt=0)):
-    return tasks.get(task_id)
-
-
-@app.put("/tasks/{task_id}/")
-async def update_task_item(
-        task: Task,
-        task_id: int = Path(..., title='Task index', gt=0),
-):
-    tasks.update({task_id: task})
-    return task
+@app.get('/tasks/', response_model=schemas.Task, tags=['tasks'])
+def list_tasks(offset: int = 0, limit: int = 100, db: Session = Depends(get_db)):
+    return crud.get_tasks(db=db, offset=offset, limit=limit)
