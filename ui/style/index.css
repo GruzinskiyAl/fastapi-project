@@ -1,0 +1,11 @@
+.btn {
+    background-color: beige;
+    height: 24px;
+    width: 50px;
+    color: #564;
+    text-underline: none;
+}
+
+.btn:visited {
+    color: #564
+}
